@@ -1,0 +1,28 @@
+services:
+  db:
+    image: postgres:16
+    container_name: flightreservation-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: app_password
+      POSTGRES_DB: flightreservation
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      # The official postgres image runs every *.sql / *.sh file found
+      # directly in /docker-entrypoint-initdb.d, in alphabetical order, on
+      # first container start (empty data dir only). Each file below is
+      # mounted individually, numbered so migrations run before seed data.
+      - ./migrations/001_create_tables.sql:/docker-entrypoint-initdb.d/001_create_tables.sql
+      - ./migrations/002_indexes.sql:/docker-entrypoint-initdb.d/002_indexes.sql
+      - ./seed/003_seed_data.sql:/docker-entrypoint-initdb.d/003_seed_data.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user -d flightreservation"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  db_data:

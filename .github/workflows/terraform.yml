@@ -1,0 +1,94 @@
+name: Terraform Plan
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform.yml"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  terraform:
+    name: Terraform (${{ matrix.env }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [dev, prod]
+    defaults:
+      run:
+        working-directory: infra/envs/${{ matrix.env }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform fmt (check only, whole repo)
+        run: terraform fmt -check -recursive
+        working-directory: .
+        continue-on-error: false
+
+      # No real AWS deployment is required for this assessment, so init runs
+      # against a local backend instead of the S3 backend defined in
+      # backend.tf - that keeps the workflow runnable without AWS
+      # credentials or a pre-existing state bucket.
+      - name: Terraform init (local backend, plan-only CI)
+        run: terraform init -backend=false
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform plan
+        id: plan
+        run: |
+          terraform plan \
+            -var-file="${{ matrix.env }}.tfvars" \
+            -var="db_password=${{ secrets.TF_DB_PASSWORD || 'ci-plan-only-placeholder' }}" \
+            -refresh=false \
+            -no-color \
+            -out=tfplan.binary
+          terraform show -no-color tfplan.binary > tfplan.txt
+
+      - name: Upload plan as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ matrix.env }}
+          path: infra/envs/${{ matrix.env }}/tfplan.txt
+
+      - name: Comment plan on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'infra/envs/${{ matrix.env }}/tfplan.txt';
+            let planOutput = fs.readFileSync(path, 'utf8');
+
+            // Keep the comment within GitHub's size limits.
+            const maxLen = 60000;
+            if (planOutput.length > maxLen) {
+              planOutput = planOutput.slice(0, maxLen) + '\n\n... (truncated, see workflow artifact for full plan)';
+            }
+
+            const body = `#### Terraform Plan - \`${{ matrix.env }}\`
+            <details><summary>Show plan</summary>
+
+            \`\`\`hcl
+            ${planOutput}
+            \`\`\`
+
+            </details>`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });

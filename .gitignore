@@ -1,0 +1,29 @@
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfplan.binary
+tfplan.binary
+tfplan.txt
+crash.log
+crash.*.log
+*.auto.tfvars
+*.auto.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Local database backups (kept out of git - contain real data)
+backups/
+
+# Env / secrets
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+*.swp
